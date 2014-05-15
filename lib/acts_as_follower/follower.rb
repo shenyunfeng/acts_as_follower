@@ -20,6 +20,9 @@ module ActsAsFollower #:nodoc:
         0 < Follow.unblocked.for_follower(self).for_followable(followable).count
       end
 
+      def blocked_following?(followable)
+        0 < Follow.blocked.for_follower(self).for_followable(followable).count
+      end
       # Returns the number of objects this instance is following.
       def follow_count
         Follow.unblocked.for_follower(self).count
@@ -29,7 +32,7 @@ module ActsAsFollower #:nodoc:
       # Does not allow duplicate records to be created.
       def follow(followable)
         if self != followable
-          self.follows.find_or_create_by(followable_id: followable.id, followable_type: parent_class_name(followable))
+          self.follows.find_or_create_by_followable_id_and_followable_type_and_blocked(followable.id, parent_class_name(followable),false)
         end
       end
 
@@ -40,21 +43,14 @@ module ActsAsFollower #:nodoc:
         end
       end
 
-      # returns the follows records to the current instance
-      def follows_scoped
-        self.follows.unblocked.includes(:followable)
-      end
-
       # Returns the follow records related to this instance by type.
       def follows_by_type(followable_type, options={})
-        follows_scope  = follows_scoped.for_followable_type(followable_type)
-        follows_scope = apply_options_to_scope(follows_scope, options)
+        self.follows.unblocked.includes(:followable).for_followable_type(followable_type).all(options)
       end
 
       # Returns the follow records related to this instance with the followable included.
       def all_follows(options={})
-        follows_scope = follows_scoped
-        follows_scope = apply_options_to_scope(follows_scope, options)
+        self.follows.unblocked.includes(:followable).all(options)
       end
 
       # Returns the actual records which this instance is following.
@@ -67,8 +63,8 @@ module ActsAsFollower #:nodoc:
         followables = followable_type.constantize.
           joins(:followings).
           where('follows.blocked'         => false,
-                'follows.follower_id'     => self.id,
-                'follows.follower_type'   => parent_class_name(self),
+                'follows.follower_id'     => self.id, 
+                'follows.follower_type'   => parent_class_name(self), 
                 'follows.followable_type' => followable_type)
         if options.has_key?(:limit)
           followables = followables.limit(options[:limit])
@@ -95,10 +91,6 @@ module ActsAsFollower #:nodoc:
         else
           super
         end
-      end
-
-      def respond_to?(m, include_private = false)
-        super || m.to_s[/following_(.+)_count/] || m.to_s[/following_(.+)/]
       end
 
       # Returns a follow record for the current instance and followable object.
